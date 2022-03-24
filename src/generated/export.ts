@@ -16,33 +16,39 @@ import {
 
 // Services
 
-export interface MessagingDef {
-    receive: (msg: string, callParams: CallParams<'msg'>) => void | Promise<void>;
+export interface GreetingServiceDef {
+    greeting: (name: string, callParams: CallParams<'name'>) => string | Promise<string>;
 }
-export function registerMessaging(serviceId: string, service: MessagingDef): void;
-export function registerMessaging(peer: FluencePeer, serviceId: string, service: MessagingDef): void;
+export function registerGreetingService(serviceId: string, service: GreetingServiceDef): void;
+export function registerGreetingService(peer: FluencePeer, serviceId: string, service: GreetingServiceDef): void;
        
 
-export function registerMessaging(...args: any) {
+export function registerGreetingService(...args: any) {
     registerService(
         args,
         {
     "functions" : {
         "tag" : "labeledProduct",
         "fields" : {
-            "receive" : {
+            "greeting" : {
                 "tag" : "arrow",
                 "domain" : {
                     "tag" : "labeledProduct",
                     "fields" : {
-                        "msg" : {
+                        "name" : {
                             "tag" : "scalar",
                             "name" : "string"
                         }
                     }
                 },
                 "codomain" : {
-                    "tag" : "nil"
+                    "tag" : "unlabeledProduct",
+                    "items" : [
+                        {
+                            "tag" : "scalar",
+                            "name" : "string"
+                        }
+                    ]
                 }
             }
         }
@@ -54,20 +60,24 @@ export function registerMessaging(...args: any) {
 // Functions
  
 
-export function resolveRoute(
-    route_id: string,
-    ack: number,
+export function registerForRouteNode(
+    subscriber_node_id: string,
+    label: string,
+    value: string,
+    service_id: string | null,
     config?: {ttl?: number}
-): Promise<{ peer_id: string; relay_id: string[]; route_id: string; service_id: string[]; set_by: string; signature: number[]; solution: number[]; timestamp_created: number; value: string; }[]>;
+): Promise<void>;
 
-export function resolveRoute(
+export function registerForRouteNode(
     peer: FluencePeer,
-    route_id: string,
-    ack: number,
+    subscriber_node_id: string,
+    label: string,
+    value: string,
+    service_id: string | null,
     config?: {ttl?: number}
-): Promise<{ peer_id: string; relay_id: string[]; route_id: string; service_id: string[]; set_by: string; signature: number[]; solution: number[]; timestamp_created: number; value: string; }[]>;
+): Promise<void>;
 
-export function resolveRoute(...args: any) {
+export function registerForRouteNode(...args: any) {
 
     let script = `
                     (xor
@@ -75,144 +85,139 @@ export function resolveRoute(...args: any) {
                       (seq
                        (seq
                         (seq
-                         (call %init_peer_id% ("getDataSrv" "-relay-") [] -relay-)
-                         (call %init_peer_id% ("getDataSrv" "route_id") [] route_id)
-                        )
-                        (call %init_peer_id% ("getDataSrv" "ack") [] ack)
-                       )
-                       (new $res
-                        (xor
                          (seq
                           (seq
                            (seq
                             (seq
-                             (call -relay- ("op" "string_to_b58") [route_id] k)
-                             (call -relay- ("kad" "neighborhood") [k [] []] nodes)
-                            )
-                            (par
-                             (fold nodes n
-                              (par
+                             (seq
+                              (seq
                                (seq
-                                (xor
-                                 (xor
-                                  (seq
-                                   (seq
-                                    (call n ("peer" "timestamp_sec") [] t)
-                                    (call n ("registry" "get_records") [route_id t] get_result)
-                                   )
-                                   (ap get_result.$.result! $res)
-                                  )
-                                  (null)
-                                 )
-                                 (seq
-                                  (call -relay- ("op" "noop") [])
-                                  (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 1])
-                                 )
+                                (seq
+                                 (call %init_peer_id% ("getDataSrv" "-relay-") [] -relay-)
+                                 (call %init_peer_id% ("getDataSrv" "subscriber_node_id") [] subscriber_node_id)
                                 )
-                                (call -relay- ("op" "noop") [])
+                                (call %init_peer_id% ("getDataSrv" "label") [] label)
                                )
-                               (next n)
+                               (call %init_peer_id% ("getDataSrv" "value") [] value)
                               )
+                              (call %init_peer_id% ("getDataSrv" "service_id") [] service_id)
                              )
-                             (null)
+                             (call %init_peer_id% ("peer" "timestamp_sec") [] t)
+                            )
+                            (xor
+                             (call -relay- ("registry" "get_route_bytes") [label [] t [] ""] bytes)
+                             (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 1])
                             )
                            )
-                           (call -relay- ("op" "noop") [$res.$.[ack]!])
+                           (call %init_peer_id% ("sig" "sign") [bytes] signature)
                           )
-                          (call -relay- ("registry" "merge") [$res] result)
+                          (xor
+                           (call -relay- ("registry" "get_route_id") [label %init_peer_id%] route_id)
+                           (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 2])
+                          )
                          )
-                         (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 2])
+                         (xor
+                          (call -relay- ("registry" "get_host_record_bytes") [route_id value [] service_id t []] bytes-0)
+                          (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 3])
+                         )
                         )
+                        (call %init_peer_id% ("sig" "sign") [bytes-0] signature-0)
                        )
+                       (call -relay- ("op" "noop") [])
                       )
                       (xor
-                       (call %init_peer_id% ("callbackSrv" "response") [result.$.result!])
-                       (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 3])
+                       (seq
+                        (seq
+                         (seq
+                          (seq
+                           (seq
+                            (seq
+                             (call subscriber_node_id ("peer" "timestamp_sec") [] t-0)
+                             (call subscriber_node_id ("trust-graph" "get_weight") [%init_peer_id% t-0] weight)
+                            )
+                            (call subscriber_node_id ("registry" "put_host_record") [route_id value [] service_id t [] signature-0.$.signature.[0]! weight t-0] result)
+                           )
+                           (call subscriber_node_id ("op" "string_to_b58") [route_id] k)
+                          )
+                          (call subscriber_node_id ("kad" "neighborhood") [k [] []] nodes)
+                         )
+                         (par
+                          (fold nodes n
+                           (par
+                            (xor
+                             (xor
+                              (seq
+                               (seq
+                                (seq
+                                 (seq
+                                  (seq
+                                   (call n ("peer" "timestamp_sec") [] t-1)
+                                   (call n ("trust-graph" "get_weight") [%init_peer_id% t-1] weight-0)
+                                  )
+                                  (call n ("registry" "register_route") [label [] t [] "" signature.$.signature.[0]! false weight-0 t-1] result-0)
+                                 )
+                                 (call n ("peer" "timestamp_sec") [] t-2)
+                                )
+                                (call n ("trust-graph" "get_weight") [%init_peer_id% t-2] weight-1)
+                               )
+                               (call n ("registry" "propagate_host_record") [result t-2 weight-1] result-1)
+                              )
+                              (null)
+                             )
+                             (seq
+                              (call -relay- ("op" "noop") [])
+                              (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 4])
+                             )
+                            )
+                            (next n)
+                           )
+                          )
+                          (null)
+                         )
+                        )
+                        (call -relay- ("op" "noop") [])
+                       )
+                       (seq
+                        (call -relay- ("op" "noop") [])
+                        (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 5])
+                       )
                       )
                      )
-                     (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 4])
+                     (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 6])
                     )
     `
     return callFunction(
         args,
         {
-    "functionName" : "resolveRoute",
+    "functionName" : "registerForRouteNode",
     "arrow" : {
         "tag" : "arrow",
         "domain" : {
             "tag" : "labeledProduct",
             "fields" : {
-                "route_id" : {
+                "subscriber_node_id" : {
                     "tag" : "scalar",
                     "name" : "string"
                 },
-                "ack" : {
+                "label" : {
                     "tag" : "scalar",
-                    "name" : "i16"
+                    "name" : "string"
+                },
+                "value" : {
+                    "tag" : "scalar",
+                    "name" : "string"
+                },
+                "service_id" : {
+                    "tag" : "option",
+                    "type" : {
+                        "tag" : "scalar",
+                        "name" : "string"
+                    }
                 }
             }
         },
         "codomain" : {
-            "tag" : "unlabeledProduct",
-            "items" : [
-                {
-                    "tag" : "array",
-                    "type" : {
-                        "tag" : "struct",
-                        "name" : "Record",
-                        "fields" : {
-                            "relay_id" : {
-                                "tag" : "array",
-                                "type" : {
-                                    "tag" : "scalar",
-                                    "name" : "string"
-                                }
-                            },
-                            "signature" : {
-                                "tag" : "array",
-                                "type" : {
-                                    "tag" : "scalar",
-                                    "name" : "u8"
-                                }
-                            },
-                            "solution" : {
-                                "tag" : "array",
-                                "type" : {
-                                    "tag" : "scalar",
-                                    "name" : "u8"
-                                }
-                            },
-                            "route_id" : {
-                                "tag" : "scalar",
-                                "name" : "string"
-                            },
-                            "set_by" : {
-                                "tag" : "scalar",
-                                "name" : "string"
-                            },
-                            "peer_id" : {
-                                "tag" : "scalar",
-                                "name" : "string"
-                            },
-                            "service_id" : {
-                                "tag" : "array",
-                                "type" : {
-                                    "tag" : "scalar",
-                                    "name" : "string"
-                                }
-                            },
-                            "value" : {
-                                "tag" : "scalar",
-                                "name" : "string"
-                            },
-                            "timestamp_created" : {
-                                "tag" : "scalar",
-                                "name" : "u64"
-                            }
-                        }
-                    }
-                }
-            ]
+            "tag" : "nil"
         }
     },
     "names" : {
@@ -404,24 +409,20 @@ export function createRouteAndRegister(...args: any) {
 
  
 
-export function send_message(
-    relay: string,
-    peer_id: string,
-    service_id: string,
+export function greeting(
+    route_id: string,
     message: string,
     config?: {ttl?: number}
-): Promise<void>;
+): Promise<string[]>;
 
-export function send_message(
+export function greeting(
     peer: FluencePeer,
-    relay: string,
-    peer_id: string,
-    service_id: string,
+    route_id: string,
     message: string,
     config?: {ttl?: number}
-): Promise<void>;
+): Promise<string[]>;
 
-export function send_message(...args: any) {
+export function greeting(...args: any) {
 
     let script = `
                     (xor
@@ -429,60 +430,123 @@ export function send_message(...args: any) {
                       (seq
                        (seq
                         (seq
-                         (seq
-                          (seq
-                           (seq
-                            (call %init_peer_id% ("getDataSrv" "-relay-") [] -relay-)
-                            (call %init_peer_id% ("getDataSrv" "relay") [] relay)
-                           )
-                           (call %init_peer_id% ("getDataSrv" "peer_id") [] peer_id)
-                          )
-                          (call %init_peer_id% ("getDataSrv" "service_id") [] service_id)
-                         )
-                         (call %init_peer_id% ("getDataSrv" "message") [] message)
+                         (call %init_peer_id% ("getDataSrv" "-relay-") [] -relay-)
+                         (call %init_peer_id% ("getDataSrv" "route_id") [] route_id)
                         )
-                        (call -relay- ("op" "noop") [])
+                        (call %init_peer_id% ("getDataSrv" "message") [] message)
                        )
-                       (call relay ("op" "noop") [])
+                       (new $res
+                        (seq
+                         (seq
+                          (new $res-0
+                           (xor
+                            (seq
+                             (seq
+                              (seq
+                               (seq
+                                (call -relay- ("op" "string_to_b58") [route_id] k)
+                                (call -relay- ("kad" "neighborhood") [k [] []] nodes)
+                               )
+                               (par
+                                (fold nodes n
+                                 (par
+                                  (seq
+                                   (xor
+                                    (xor
+                                     (seq
+                                      (seq
+                                       (call n ("peer" "timestamp_sec") [] t)
+                                       (call n ("registry" "get_records") [route_id t] get_result)
+                                      )
+                                      (ap get_result.$.result! $res-0)
+                                     )
+                                     (null)
+                                    )
+                                    (seq
+                                     (call -relay- ("op" "noop") [])
+                                     (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 1])
+                                    )
+                                   )
+                                   (call -relay- ("op" "noop") [])
+                                  )
+                                  (next n)
+                                 )
+                                )
+                                (null)
+                               )
+                              )
+                              (call -relay- ("op" "noop") [$res-0.$.[5]!])
+                             )
+                             (call -relay- ("registry" "merge") [$res-0] result)
+                            )
+                            (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 2])
+                           )
+                          )
+                          (fold result.$.result! p
+                           (seq
+                            (seq
+                             (seq
+                              (call -relay- ("op" "noop") [])
+                              (fold p.$.relay_id! -via-peer-
+                               (seq
+                                (call -via-peer- ("op" "noop") [])
+                                (next -via-peer-)
+                               )
+                              )
+                             )
+                             (xor
+                              (seq
+                               (seq
+                                (call p.$.peer_id! (p.$.service_id.[0]! "greeting") [message] $res)
+                                (fold p.$.relay_id! -via-peer-
+                                 (seq
+                                  (next -via-peer-)
+                                  (call -via-peer- ("op" "noop") [])
+                                 )
+                                )
+                               )
+                               (call -relay- ("op" "noop") [])
+                              )
+                              (seq
+                               (seq
+                                (fold p.$.relay_id! -via-peer-
+                                 (seq
+                                  (call -via-peer- ("op" "noop") [])
+                                  (next -via-peer-)
+                                 )
+                                )
+                                (call -relay- ("op" "noop") [])
+                               )
+                               (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 3])
+                              )
+                             )
+                            )
+                            (next p)
+                           )
+                          )
+                         )
+                         (call %init_peer_id% ("op" "identity") [$res] res-fix)
+                        )
+                       )
                       )
                       (xor
-                       (seq
-                        (seq
-                         (call peer_id (service_id "receive") [message])
-                         (call relay ("op" "noop") [])
-                        )
-                        (call -relay- ("op" "noop") [])
-                       )
-                       (seq
-                        (seq
-                         (call relay ("op" "noop") [])
-                         (call -relay- ("op" "noop") [])
-                        )
-                        (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 1])
-                       )
+                       (call %init_peer_id% ("callbackSrv" "response") [res-fix])
+                       (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 4])
                       )
                      )
-                     (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 2])
+                     (call %init_peer_id% ("errorHandlingSrv" "error") [%last_error% 5])
                     )
     `
     return callFunction(
         args,
         {
-    "functionName" : "send_message",
+    "functionName" : "greeting",
     "arrow" : {
         "tag" : "arrow",
         "domain" : {
             "tag" : "labeledProduct",
             "fields" : {
-                "relay" : {
-                    "tag" : "scalar",
-                    "name" : "string"
-                },
-                "peer_id" : {
-                    "tag" : "scalar",
-                    "name" : "string"
-                },
-                "service_id" : {
+                "route_id" : {
                     "tag" : "scalar",
                     "name" : "string"
                 },
@@ -493,7 +557,16 @@ export function send_message(...args: any) {
             }
         },
         "codomain" : {
-            "tag" : "nil"
+            "tag" : "unlabeledProduct",
+            "items" : [
+                {
+                    "tag" : "array",
+                    "type" : {
+                        "tag" : "scalar",
+                        "name" : "string"
+                    }
+                }
+            ]
         }
     },
     "names" : {

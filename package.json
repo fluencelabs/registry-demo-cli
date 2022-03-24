@@ -7,7 +7,8 @@
       "compile-aqua": "aqua -i ./src/aqua -o ./src/generated",
       "build": "npm run compile-aqua && tsc",
       "prestart": "npm run build",
-      "start": "node dist/index.js"
+      "start": "node dist/index.js",
+      "start_client": "node dist/client.js"
     },
     "keywords": [],
     "author": "Fluence Labs",

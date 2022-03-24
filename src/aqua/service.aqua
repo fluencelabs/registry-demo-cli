@@ -1,4 +1,4 @@
-module Service declares Messaging
+module Service declares GreetingService
 
-service Messaging:
-    receive(msg: string)
+service GreetingService:
+    greeting(name: string) -> string
