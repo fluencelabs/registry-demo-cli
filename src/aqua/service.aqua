@@ -1,0 +1,4 @@
+module Service declares Messaging
+
+service Messaging:
+    receive(msg: string)

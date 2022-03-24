@@ -1,0 +1,9 @@
+module Export
+import createRouteAndRegister, resolveRoute from "@fluencelabs/registry/routing.aqua"
+import Messaging from "./service.aqua"
+export createRouteAndRegister, resolveRoute, Messaging, send_message
+
+func send_message(relay: string, peer_id: string, service_id: string, message: string):
+    on peer_id via HOST_PEER_ID via relay:
+        Messaging service_id
+        Messaging.receive(message)
